@@ -11,6 +11,7 @@ export interface Measurement {
   id: number;
   points: [Point, Point];
   pixelDistance: number;
+  page: number;
   tag?: {
     id: string;
     name: string;

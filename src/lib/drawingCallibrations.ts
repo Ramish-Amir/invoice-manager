@@ -25,7 +25,7 @@ export const DrawingCalibrations = {
   "75": 0.0933, // 1:75 scale => 1 px = 0.0933 m
 };
 
-export const DEFAULT_CALLIBRATION_VALUE = "125";
+export const DEFAULT_CALLIBRATION_VALUE = "100";
 
 export const getDrawingCallibrations = (
   scale: string,
@@ -37,5 +37,6 @@ export const getDrawingCallibrations = (
         "x" +
         Math.min(viewportDimensions.width, viewportDimensions.height)
     ];
-  return calibrations[scale];
+
+  return calibrations?.[scale || DEFAULT_CALLIBRATION_VALUE];
 };

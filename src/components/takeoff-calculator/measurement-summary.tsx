@@ -3,28 +3,34 @@ import { Measurement } from "./measurement-overlay";
 import { Tag } from "./tag-selector";
 import { Badge } from "../ui/badge";
 import { Tag as TagIcon } from "lucide-react";
+import {
+  DEFAULT_CALLIBRATION_VALUE,
+  getDrawingCallibrations,
+} from "@/lib/drawingCallibrations";
 
 interface MeasurementSummaryProps {
   measurements: Measurement[];
   scaleFactor?: number | null; // deprecated
   scaleFactorGetter?: (measurement: Measurement) => number;
   tags: Tag[];
+  callibrationScale: { [page: number]: string };
+  viewportDimensions: { width: number; height: number };
 }
 
 export const MeasurementSummary: React.FC<MeasurementSummaryProps> = ({
   measurements,
-  scaleFactor,
-  scaleFactorGetter,
-  tags,
+  callibrationScale,
+  viewportDimensions,
 }) => {
   if (measurements.length === 0) return null;
 
   // Group measurements by tag
   const measurementsByTag = measurements.reduce((acc, measurement) => {
     const tagId = measurement.tag?.id || "untagged";
-    const factor = scaleFactorGetter
-      ? scaleFactorGetter(measurement)
-      : scaleFactor ?? 1;
+    const factor = getDrawingCallibrations(
+      callibrationScale?.[measurement?.page] || DEFAULT_CALLIBRATION_VALUE,
+      viewportDimensions
+    );
     if (!acc[tagId]) {
       acc[tagId] = {
         tag: measurement.tag,
@@ -92,9 +98,11 @@ export const MeasurementSummary: React.FC<MeasurementSummaryProps> = ({
                 (sum, m) =>
                   sum +
                   m.pixelDistance *
-                    (scaleFactorGetter
-                      ? scaleFactorGetter(m)
-                      : scaleFactor ?? 1),
+                    getDrawingCallibrations(
+                      callibrationScale?.[m?.page] ||
+                        DEFAULT_CALLIBRATION_VALUE,
+                      viewportDimensions
+                    ),
                 0
               )
               .toFixed(2)}{" "}

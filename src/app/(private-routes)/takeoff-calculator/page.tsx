@@ -8,12 +8,12 @@ import "react-pdf/dist/Page/TextLayer.css";
 import { TakeoffControlMenu } from "@/components/takeoff-calculator/control-menu";
 import { DrawingCallibrationScale } from "@/components/takeoff-calculator/callibration-scale";
 import { MeasurementOverlay } from "@/components/takeoff-calculator/measurement-overlay";
-import { MeasurementList } from "@/components/takeoff-calculator/measurement-list";
 import { TagSelector, Tag } from "@/components/takeoff-calculator/tag-selector";
 import { MeasurementSummary } from "@/components/takeoff-calculator/measurement-summary";
 import {
   DEFAULT_CALLIBRATION_VALUE,
   DrawingCalibrations,
+  getDrawingCallibrations,
 } from "@/lib/drawingCallibrations";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -39,6 +39,7 @@ interface Measurement {
   id: number;
   points: [Point, Point];
   pixelDistance: number;
+  page: number;
   tag?: {
     id: string;
     name: string;
@@ -57,8 +58,8 @@ export default function PDFViewer() {
   const [pageScales, setPageScales] = useState<{ [page: number]: number }>({});
   const [containerWidth, setContainerWidth] = useState<number>();
   const [pagesWidth, setPagesWidth] = useState<{ [page: number]: number }>({}); // New state to track individual page widths
-  const [pageScaleFactors, setPageScaleFactors] = useState<{
-    [page: number]: number;
+  const [callibrationScale, setCallibrationScale] = useState<{
+    [page: number]: string;
   }>({});
   const [viewportDimensions, setViewportDimensions] = useState<{
     width: number;
@@ -87,6 +88,7 @@ export default function PDFViewer() {
   const [dragPage, setDragPage] = useState<number | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
+  // const [pageInView, setPageInView] = useState(1);
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
@@ -107,7 +109,7 @@ export default function PDFViewer() {
     setNumPages(undefined);
     setMeasurements([]);
     setPageScales({});
-    setPageScaleFactors({});
+    setCallibrationScale({});
     setHistory([]);
     setRedoStack([]);
     setPinnedIds(new Set());
@@ -158,6 +160,7 @@ export default function PDFViewer() {
       points: [p1, p2],
       pixelDistance,
       tag: selectedTag || undefined,
+      page: pageNum,
     };
 
     const updatedMeasurements = [...measurements, newMeasurement];
@@ -172,32 +175,65 @@ export default function PDFViewer() {
     setIsDragging(false);
   };
 
-  // Track current page as user scrolls
+  // Track current page as user scrolls and a more precise page-in-view
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
     const children = container.querySelectorAll("[data-page-number]");
-    let closestPage = currentPage;
-    let minDistance = Infinity;
+    // let closestPage = currentPage;
+    // let minDistance = Infinity;
+
+    // children.forEach((child) => {
+    //   const rect = (child as HTMLElement).getBoundingClientRect();
+    //   // Distance from top of container
+    //   const distance = Math.abs(
+    //     rect.top - container.getBoundingClientRect().top
+    //   );
+    //   if (distance < minDistance) {
+    //     minDistance = distance;
+    //     const pageNum = parseInt(
+    //       (child as HTMLElement).getAttribute("data-page-number") || "1",
+    //       10
+    //     );
+    //     closestPage = pageNum;
+    //   }
+    // });
+
+    // if (closestPage !== currentPage) {
+    //   setCurrentPage(closestPage);
+    // }
+
+    // More precise page-in-view calculation
+    let newCurrentPage = currentPage;
 
     children.forEach((child) => {
       const rect = (child as HTMLElement).getBoundingClientRect();
-      // Distance from top of container
-      const distance = Math.abs(
-        rect.top - container.getBoundingClientRect().top
+      const containerRect = container.getBoundingClientRect();
+      const pageNum = parseInt(
+        (child as HTMLElement).getAttribute("data-page-number") || "1",
+        10
       );
-      if (distance < minDistance) {
-        minDistance = distance;
-        const pageNum = parseInt(
-          (child as HTMLElement).getAttribute("data-page-number") || "1",
-          10
-        );
-        closestPage = pageNum;
+
+      // Page fully visible in container
+      const fullyVisible =
+        rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
+
+      // Page is "current in-view" when:
+      // 1. It's fully visible (normal forward scroll), OR
+      // 2. Its bottom is inside the container (handles scrolling back up)
+      const candidate =
+        fullyVisible ||
+        (rect.top < containerRect.top && rect.bottom > containerRect.top);
+
+      if (candidate) {
+        if (pageNum !== newCurrentPage) {
+          newCurrentPage = pageNum;
+        }
       }
     });
 
-    if (closestPage !== currentPage) {
-      setCurrentPage(closestPage);
+    if (newCurrentPage !== currentPage) {
+      setCurrentPage(newCurrentPage);
     }
   }, [currentPage]);
 
@@ -314,6 +350,39 @@ export default function PDFViewer() {
         />
       </div>
 
+      {/* ✅ Sticky toolbar for the current page */}
+      <div className="sticky top-0 left-0 right-0 z-[1] flex items-center justify-between px-4 py-2 border bg-gray-50 rounded-t-lg rounded-b-none">
+        <span className="text-xs text-gray-500">Page {currentPage}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Scale:</span>
+          <DrawingCallibrationScale
+            setCallibrationScale={(newCallibrationScale: string) =>
+              setCallibrationScale((prev) => ({
+                ...prev,
+                [currentPage]: newCallibrationScale,
+              }))
+            }
+            callibrationScale={callibrationScale[currentPage]}
+          />
+          <span className="text-xs text-gray-500">Zoom:</span>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            step={1}
+            value={pageScales[currentPage] ?? 1.25}
+            onChange={(e) =>
+              setPageScales((prev) => ({
+                ...prev,
+                [currentPage]: Number(e.target.value),
+              }))
+            }
+            className="w-16 px-2 py-1 border rounded text-xs"
+            aria-label={`Zoom for page ${currentPage}`}
+          />
+        </div>
+      </div>
+
       {file && (
         <div className="relative max-w-[100%] max-h-[100vh] ">
           <TakeoffControlMenu
@@ -335,6 +404,7 @@ export default function PDFViewer() {
             className="max-w-[100%] max-h-[100vh] overflow-auto"
             ref={containerRef}
           >
+            {/* PDF Document */}
             <Document
               file={file}
               onLoadSuccess={onDocumentLoadSuccess}
@@ -345,47 +415,16 @@ export default function PDFViewer() {
                 const isVisible = Math.abs(pageNumber - currentPage) <= 1;
                 const scale = pageScales[pageNumber] ?? 1.25;
                 const scaleFactor =
-                  pageScaleFactors[pageNumber] ??
-                  DrawingCalibrations[DEFAULT_CALLIBRATION_VALUE];
+                  getDrawingCallibrations(
+                    callibrationScale[pageNumber]?.toString(),
+                    viewportDimensions
+                  ) ?? DrawingCalibrations[DEFAULT_CALLIBRATION_VALUE];
 
                 return (
                   <div
                     key={`page_container_${pageNumber}`}
                     className="relative overflow-x-auto mb-6"
                   >
-                    <div className="flex items-center sticky top-0 left-0 right-0 z-[1] justify-between px-4 py-2 border bg-gray-50 rounded-t-lg">
-                      <span className="text-xs text-gray-500">
-                        Page {pageNumber}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">Scale:</span>
-                        <DrawingCallibrationScale
-                          setScaleFactor={(factor: number) => {
-                            return setPageScaleFactors((prev) => ({
-                              ...prev,
-                              [pageNumber]: factor,
-                            }));
-                          }}
-                          viewportDimensions={viewportDimensions}
-                        />
-                        <span className="text-xs text-gray-500">Zoom:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          step={0.5}
-                          value={scale}
-                          onChange={(e) =>
-                            setPageScales((prev) => ({
-                              ...prev,
-                              [pageNumber]: Number(e.target.value),
-                            }))
-                          }
-                          className="w-16 px-2 py-1 border rounded text-xs"
-                          aria-label={`Zoom for page ${pageNumber}`}
-                        />
-                      </div>
-                    </div>
                     <div
                       key={`pdf_page_${pageNumber}`}
                       className="relative border border-t-0 shadow-sm"
@@ -455,22 +494,20 @@ export default function PDFViewer() {
           <>
             <MeasurementSummary
               measurements={measurements}
-              scaleFactorGetter={(measurement) =>
-                pageScaleFactors[measurement.points[0].page] ??
-                DrawingCalibrations[DEFAULT_CALLIBRATION_VALUE]
-              }
               tags={tags}
+              callibrationScale={callibrationScale}
+              viewportDimensions={viewportDimensions}
             />
-            <MeasurementList
+            {/* <MeasurementList
               measurements={measurements}
               // Pass per-measurement scaleFactor based on page
               scaleFactorGetter={(measurement) =>
-                pageScaleFactors[measurement.points[0].page] ??
+                callibrationScale[measurement.points[0].page] ??
                 DrawingCalibrations[DEFAULT_CALLIBRATION_VALUE]
               }
               tags={tags}
               onMeasurementTagChange={handleMeasurementTagChange}
-            />
+            /> */}
           </>
         )}
       </div>
